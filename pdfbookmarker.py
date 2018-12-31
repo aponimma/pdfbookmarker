@@ -86,7 +86,6 @@ class PdfBookmarker:
                         return raw_title
 
                     for word in text.split('\n'):
-                        print(word)
                         if is_valid_entry(word):
                             title = clean_title(" ".join(word.split()[:-1]))
                             page = int(word.split()[-1])
