@@ -2,8 +2,7 @@ import fitz
 import random
 import pdf2image
 import pytesseract
-from contents import Entry
-from contents import Contents
+from contents import Entry, Contents
 
 
 class PdfBookmarker:
@@ -11,10 +10,10 @@ class PdfBookmarker:
     A class automatically generating a table of contents using pdf bookmarks.
     """
 
-    def __init__(self, filename):
+    def __init__(self, filename, table=None, value=0):
         self.doc = fitz.Document(filename)
-        self._contents = Contents()
-        self._deviation = 0
+        self.contents = table
+        self.deviation = value
 
     @property
     def contents(self):
@@ -22,17 +21,19 @@ class PdfBookmarker:
         The table of contents of this pdf book.
         :return: the table of contents
         """
-        return self.contents.container
+        return self._contents
 
     @contents.setter
-    def contents(self, table=None):
+    def contents(self, table):
         """
 
         :param table: the table of contents to set.
         """
         if table is not None:
-            self.contents = table
+            self._contents = table
         else:
+            self._contents = Contents()
+
             def pdf_to_img(pg):
                 """
                 Convert pdf pg to an image.
@@ -102,16 +103,16 @@ class PdfBookmarker:
         """
         The difference between the page number in the contents and its real location.
         """
-        return self.deviation
+        return self._deviation
 
     @deviation.setter
-    def deviation(self, value=0):
+    def deviation(self, value):
         """
         Set the deviation of this pdf book.
         :param value: the value to set.
         """
         if value != 0:
-            self.contents.deviation = value
+            self._deviation = value
         else:
             index = random.randrange(self.contents.count)
             entry = self.contents.get_entry(index)
@@ -119,11 +120,6 @@ class PdfBookmarker:
                 page = self.doc.loadPage(i)
                 text = page.getText('text').lower()
                 if text.find(entry.title.lower()) != -1 or text.find(str(entry.page)) != -1:
-                    self.contents.deviation = page.number - entry.page
+                    self.deviation = page.number - entry.page
                     break
         # print(self.contents.deviation)
-
-
-
-
-
