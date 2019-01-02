@@ -1,9 +1,11 @@
+import re
+
 from pdfbookmarker import PdfBookmarker
 
 
 def main():
-    bookmarker = PdfBookmarker("Introduction-to-the-Theory-of-Computation.pdf")
-    print(bookmarker.display_deviation())
+    bookmarker = PdfBookmarker("Linear-Algebra-Done-Right.pdf")
+    bookmarker.display_contents()
 
 
 if __name__ == '__main__':

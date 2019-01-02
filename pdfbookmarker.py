@@ -7,7 +7,7 @@ class PdfBookmarker:
     """
 
     def __init__(self, filename, from_page=0, to_page=0, deviation=0):
-        self._contents = Contents(filename=filename, from_page=from_page, to_page=to_page, deviation=deviation)
+        self.contents = Contents(filename=filename, from_page=from_page, to_page=to_page, deviation=deviation)
 
     @property
     def contents(self):
@@ -30,7 +30,8 @@ class PdfBookmarker:
         Display the table of the contents.
         :return: the table of the contents.
         """
-        return self.contents.container
+        for entry in self.contents:
+            print(entry.title, entry.page, entry.level)
 
     def display_deviation(self):
         """

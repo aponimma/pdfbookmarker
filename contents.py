@@ -1,4 +1,6 @@
 import random
+import re
+
 import fitz
 import pdf2image
 import pytesseract
@@ -19,86 +21,163 @@ class Contents:
     """
     A class representing a table of contents of a pdf book.
     """
+    LEVEL_PATTERNS = {0: r'index|preface|references|bibliography|appendix|part|solutions',
+                      1: [r'[A-Z]$|\d+$', r'\bChapter'],
+                      2: [r'([a-zA-Z0-9]+)\.([a-zA-Z0-9]+$)', r'\D'],
+                      3: [r'\d+\.\d+\.\d+$', r'(?!Chapter)(?!\.)\D+']}
 
     def __init__(self, filename, deviation, from_page, to_page):
         self.doc = fitz.Document(filename)
-        self.container = []
         self.from_page = from_page
         self.to_page = to_page
         self.count = 0
-
-        def pdf_to_img(pg):
-            """
-            Convert pdf pg to an image.
-            :param pg: the pdf page to convert.
-            :return: an image representing this page.
-            """
-            page_doc = fitz.Document()
-            page_doc.insertPDF(self.doc, from_page=pg.number, to_page=pg.number)
-            page_bytes = page_doc.write()
-            page_img = pdf2image.convert_from_bytes(page_bytes, dpi=300)
-            return page_img
-
-        if self.from_page == 0 and self.to_page == 0:
-            start = 0
-            end = self.doc.pageCount
-        else:
-            start = self.from_page
-            end = self.to_page + 1
-
-        for pageNum in range(start, end):
-            page = self.doc.loadPage(pageNum)
-            img = pdf_to_img(page)
-            text = pytesseract.image_to_string(img[0],
-                                               config='--psm 6 -c preserve_interword_spaces=1')
-            if text.lower().find('contents') != -1:
-                if self.from_page == 0:
-                    self.from_page = page.number
-
-                def is_valid_entry(line):
-                    """
-                    Check whether line is a valid entry in the table of contents.
-                    :param line: the line to check.
-                    :return: whether line is a valid entry in the table of contents.
-                    """
-                    if not line or line.isspace():
-                        # print("1, {}".format(entry))
-                        return False
-                    if len(line.split()) < 2:
-                        # print("2, {}".format(entry))
-                        return False
-                    if line.lower().find('contents') != -1:
-                        # print("3, {}".format(entry))
-                        return False
-                    if not line.split()[-1].isdigit():
-                        # print("4, {}".format(entry))
-                        return False
-                    return True
-
-                def clean_title(raw_title):
-                    """
-                    Clean all irrelevant texts from raw_title if any.
-                    :param raw_title: the raw text of an entry's title to clean.
-                    :return: a cleaned title.
-                    """
-                    index = raw_title.find('..')
-                    if index != -1:
-                        return raw_title[:index]
-                    return raw_title
-
-                for word in text.split('\n'):
-                    if is_valid_entry(word):
-                        title = clean_title(" ".join(word.split()[:-1]))
-                        page = int(word.split()[-1])
-                        entry = Entry(title, page)
-                        self.add_entry(entry)
-                        # print("{}, {}".format(entry.title, entry.page))
-            else:
-                if self.from_page != 0 and self.to_page == 0:
-                    self.to_page = page.number - 1
-                    break
-
+        self.level_patterns = dict()
+        self.container = []
         self.deviation = deviation
+
+    @property
+    def container(self):
+        """
+
+        :return:
+        """
+        return self._container
+
+    @container.setter
+    def container(self, container):
+        if container:
+            self._container = container
+        else:
+            self._container = []
+
+            def pdf_to_img(pg):
+                """
+                Convert pdf pg to an image.
+                :param pg: the pdf page to convert.
+                :return: an image representing this page.
+                """
+                page_doc = fitz.Document()
+                page_doc.insertPDF(self.doc, from_page=pg.number, to_page=pg.number)
+                page_bytes = page_doc.write()
+                page_img = pdf2image.convert_from_bytes(page_bytes, dpi=350)
+                return page_img
+
+            if self.from_page == 0 and self.to_page == 0:
+                start = 0
+                end = self.doc.pageCount
+            else:
+                start = self.from_page
+                end = self.to_page + 1
+
+            for pageNum in range(start, end):
+                page = self.doc.loadPage(pageNum)
+                img = pdf_to_img(page)
+                text = pytesseract.image_to_string(img[0],
+                                                   config='-l eng --psm 6 --oem 1')
+
+                if text.lower().find('contents') != -1:
+                    if self.from_page == 0:
+                        self.from_page = page.number
+
+                    def is_valid_entry(line):
+                        """
+                        Check whether line is a valid entry in the table of contents.
+                        :param line: the line to check.
+                        :return: whether line is a valid entry in the table of contents.
+                        """
+                        if not line or line.isspace():
+                            # print("1, {}".format(line))
+                            return 0
+                        if len(line.split()) < 2 and not line.isdigit():
+                            # print("2, {}".format(line))
+                            return 0
+                        if line.lower().find('contents') != -1:
+                            # print("3, {}".format(line))
+                            return 0
+                        if not line.split()[-1].isdigit():
+                            if re.match(r'\D*\d+\D*', line.split()[-1]):
+                                return 2
+                            if re.match(Contents.LEVEL_PATTERNS[2][0], line.split()[0]):
+                                return 3
+                            else:
+                                # print("4, {}".format(line))
+                                return 0
+                        return 1
+
+                    def clean_title(raw_title):
+                        """
+                        Clean all irrelevant texts from raw_title if any.
+                        :param raw_title: the raw text of an entry's title to clean.
+                        :return: a cleaned title.
+                        """
+                        match = re.search(r'\.\s*\.+', raw_title)
+                        if match:
+                            index = match.start()
+                            return raw_title[:index]
+                        return raw_title
+
+                    def set_level(t, current_level, visited_levels):
+                        """
+
+                        :param t:
+                        :param current_level:
+                        :param visited_levels:
+                        """
+                        serial_num = t.split()[0]
+                        if re.match(r'[a-zA-Z]', serial_num):
+                            if re.search(Contents.LEVEL_PATTERNS[0], t.lower()):
+                                return 1
+
+                        if current_level == 4:
+                            current_level = 1
+
+                        if visited_levels[current_level]:
+                            return 1
+                        else:
+                            visited_levels[current_level] = True
+
+                        if self.level_patterns.get(current_level) is None:
+                            for p in Contents.LEVEL_PATTERNS[current_level]:
+                                if re.match(p, serial_num) is not None:
+                                    self.level_patterns[current_level] = p
+                                    break
+                            if self.level_patterns.get(current_level) is None:
+                                current_level = 1
+                                return set_level(t, current_level, visited_levels)
+                            return current_level
+                        else:
+                            if re.match(self.level_patterns[current_level], serial_num) is None:
+                                current_level += 1
+                                return set_level(t, current_level, visited_levels)
+                            else:
+                                return current_level
+
+                    c_level = 1
+                    tmp_title = ""
+                    for l in text.split('\n'):
+                        if is_valid_entry(l):
+                            if is_valid_entry(l) == 3:
+                                tmp_title = l
+                            else:
+                                if tmp_title != "" and is_valid_entry(l) != 3:
+                                    title = tmp_title + clean_title(" ".join(l.split()[:-1]))
+                                    tmp_title = ""
+                                else:
+                                    tmp_title = ""
+                                    title = clean_title(" ".join(l.split()[:-1]))
+                                if is_valid_entry(l) == 2:
+                                    page = int(re.findall(r'\d+', l.split()[-1])[0])
+                                else:
+                                    page = int(l.split()[-1])
+                                level = set_level(title, c_level, {1: False, 2: False, 3: False})
+                                c_level = level
+                                entry = Entry(title, page, level)
+                                self.add_entry(entry)
+
+                else:
+                    if self.from_page != 0 and self.to_page == 0:
+                        self.to_page = page.number - 1
+                        break
 
     @property
     def deviation(self):
